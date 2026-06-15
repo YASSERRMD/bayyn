@@ -256,7 +256,7 @@ CI runs automatically on every PR via GitHub Actions (`.github/workflows/ci.yml`
 - [x] Phase 39: LLM summary plugin (optional OpenAI integration)
 - [x] Phase 40: QA assertions (cross-cutting invariant tests)
 - [x] Phase 41: Documentation update
-- [ ] Phase 42: Release preparation
+- [x] Phase 42: Release preparation
 - [ ] Phase 43: Final release
 
 ## Quick Start Verification
