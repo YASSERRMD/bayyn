@@ -17,6 +17,7 @@ from app.schemas.transcription import (
     TranscriptionJobResponse,
 )
 from app.security.url_validator import URLValidationError
+from app.services.rate_limiter import RateLimitError, check_user_limits
 from app.services.transcription_service import (
     create_transcription_job,
     delete_job,
@@ -40,7 +41,10 @@ async def create_transcription(
 ) -> CreateTranscriptionResponse:
     try:
         user_id = current_user.id if current_user else None
+        await check_user_limits(db, user_id)
         job = await create_transcription_job(db, body.url, user_id=user_id)
+    except RateLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc))
     except URLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
