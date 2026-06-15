@@ -43,6 +43,8 @@ export default function JobPage() {
 
   const handleDelete = async () => {
     await api.deleteJob(jobId);
+    queryClient.removeQueries({ queryKey: ["job", jobId] });
+    queryClient.removeQueries({ queryKey: ["transcript", jobId] });
     router.push("/history");
   };
 
@@ -199,7 +201,7 @@ export default function JobPage() {
               transcript={transcript}
               jobId={jobId}
               onDelete={handleDelete}
-              exportUrl={(format) => api.exportUrl(jobId, format)}
+              exportUrl={(format, options) => api.exportUrl(jobId, format, options)}
             />
           </CardContent>
         </Card>

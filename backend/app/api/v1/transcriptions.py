@@ -108,8 +108,12 @@ async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> Transcrip
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_transcription(job_id: uuid.UUID, db: DbSession) -> None:
-    deleted = await delete_job(db, job_id)
+async def delete_transcription(
+    job_id: uuid.UUID,
+    db: DbSession,
+    hard_delete: bool = Query(False, description="Permanently delete the job record (default: soft-delete)"),
+) -> None:
+    deleted = await delete_job(db, job_id, hard_delete=hard_delete)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transcription job not found.")
 

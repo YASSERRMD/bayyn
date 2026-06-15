@@ -98,8 +98,12 @@ export const api = {
   getTranscript: (jobId: string): Promise<Transcript> =>
     request(`/transcriptions/${jobId}/transcript`),
 
-  deleteJob: (jobId: string): Promise<void> =>
-    request(`/transcriptions/${jobId}`, { method: "DELETE" }),
+  deleteJob: (jobId: string, options?: { hardDelete?: boolean }): Promise<void> => {
+    const url = options?.hardDelete
+      ? `/transcriptions/${jobId}?hard_delete=true`
+      : `/transcriptions/${jobId}`;
+    return request(url, { method: "DELETE" });
+  },
 
   patchSegment: (jobId: string, sequenceNumber: number, text: string): Promise<TranscriptSegment> =>
     request(`/transcriptions/${jobId}/segments/${sequenceNumber}`, {
