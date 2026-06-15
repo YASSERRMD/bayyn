@@ -45,14 +45,30 @@ async def create_transcription_job(
     return job
 
 
-async def get_job(db: AsyncSession, job_id: uuid.UUID) -> TranscriptionJob | None:
+async def get_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    requester_id: Optional[uuid.UUID] = None,
+) -> Optional[TranscriptionJob]:
+    """Fetch a job by ID, applying ownership rules.
+
+    - If the job has user_id=None (anonymous), anyone may access it.
+    - If the job has a user_id, only that user (matched via requester_id) may access it.
+    - Returns None if not found or not authorised (caller raises 404 to avoid enumeration).
+    """
     result = await db.execute(
         select(TranscriptionJob).where(
             TranscriptionJob.id == job_id,
             TranscriptionJob.deleted_at.is_(None),
         )
     )
-    return result.scalar_one_or_none()
+    job = result.scalar_one_or_none()
+    if job is None:
+        return None
+    # Ownership check: anonymous jobs are public; owned jobs need matching requester
+    if job.user_id is not None and job.user_id != requester_id:
+        return None
+    return job
 
 
 async def list_jobs(
@@ -85,6 +101,7 @@ async def delete_job(
     job_id: uuid.UUID,
     *,
     hard_delete: bool = False,
+    requester_id: Optional[uuid.UUID] = None,
 ) -> bool:
     """Delete a job and all its transcript data.
 
@@ -95,7 +112,7 @@ async def delete_job(
     the audit trail survives. Pass hard_delete=True, or set soft_delete_jobs=False
     in config, to permanently remove the job record too.
     """
-    job = await get_job(db, job_id)
+    job = await get_job(db, job_id, requester_id=requester_id)
     if not job:
         return False
 

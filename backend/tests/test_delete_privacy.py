@@ -6,10 +6,10 @@ import pytest
 
 
 def _make_job():
-    from app.models.transcription_job import JobStatus, ProcessingStrategy
-    from datetime import datetime, timezone
+    from app.models.transcription_job import JobStatus
     job = MagicMock()
     job.id = uuid.uuid4()
+    job.user_id = None  # anonymous job — accessible to any requester
     job.deleted_at = None
     job.status = JobStatus.completed
     return job

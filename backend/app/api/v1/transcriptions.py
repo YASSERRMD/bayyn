@@ -65,16 +65,22 @@ async def list_transcriptions(
 
 
 @router.get("/{job_id}", response_model=TranscriptionJobResponse)
-async def get_transcription(job_id: uuid.UUID, db: DbSession) -> TranscriptionJobResponse:
-    job = await get_job(db, job_id)
+async def get_transcription(
+    job_id: uuid.UUID, db: DbSession, current_user: OptionalUser
+) -> TranscriptionJobResponse:
+    requester_id = current_user.id if current_user else None
+    job = await get_job(db, job_id, requester_id=requester_id)
     if not job:
         raise HTTPException(status_code=404, detail="Transcription job not found.")
     return _job_to_response(job)
 
 
 @router.get("/{job_id}/transcript", response_model=TranscriptResponse)
-async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> TranscriptResponse:
-    job = await get_job(db, job_id)
+async def get_transcript_endpoint(
+    job_id: uuid.UUID, db: DbSession, current_user: OptionalUser
+) -> TranscriptResponse:
+    requester_id = current_user.id if current_user else None
+    job = await get_job(db, job_id, requester_id=requester_id)
     if not job:
         raise HTTPException(status_code=404, detail="Transcription job not found.")
 
@@ -115,9 +121,11 @@ async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> Transcrip
 async def delete_transcription(
     job_id: uuid.UUID,
     db: DbSession,
+    current_user: OptionalUser,
     hard_delete: bool = Query(False, description="Permanently delete the job record (default: soft-delete)"),
 ) -> None:
-    deleted = await delete_job(db, job_id, hard_delete=hard_delete)
+    requester_id = current_user.id if current_user else None
+    deleted = await delete_job(db, job_id, hard_delete=hard_delete, requester_id=requester_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transcription job not found.")
 
@@ -126,9 +134,11 @@ async def delete_transcription(
 async def export_txt(
     job_id: uuid.UUID,
     db: DbSession,
+    current_user: OptionalUser,
     timestamps: bool = Query(False, description="Prefix each segment with [HH:MM:SS]"),
 ) -> StreamingResponse:
-    doc, segments = await _get_doc_or_404(job_id, db)
+    requester_id = current_user.id if current_user else None
+    doc, segments = await _get_doc_or_404(job_id, db, requester_id=requester_id)
     from app.exports.txt_export import generate_txt
     content = generate_txt(doc, include_timestamps=timestamps, segments=segments).encode("utf-8")
     return StreamingResponse(
@@ -139,8 +149,9 @@ async def export_txt(
 
 
 @router.get("/{job_id}/export/srt")
-async def export_srt(job_id: uuid.UUID, db: DbSession) -> StreamingResponse:
-    _, segments = await _get_doc_or_404(job_id, db)
+async def export_srt(job_id: uuid.UUID, db: DbSession, current_user: OptionalUser) -> StreamingResponse:
+    requester_id = current_user.id if current_user else None
+    _, segments = await _get_doc_or_404(job_id, db, requester_id=requester_id)
     from app.exports.srt_export import generate_srt
     srt_content = generate_srt(segments).encode("utf-8")
     return StreamingResponse(
@@ -151,9 +162,10 @@ async def export_srt(job_id: uuid.UUID, db: DbSession) -> StreamingResponse:
 
 
 @router.get("/{job_id}/export/docx")
-async def export_docx(job_id: uuid.UUID, db: DbSession) -> StreamingResponse:
-    doc, segments = await _get_doc_or_404(job_id, db)
-    job = await get_job(db, job_id)
+async def export_docx(job_id: uuid.UUID, db: DbSession, current_user: OptionalUser) -> StreamingResponse:
+    requester_id = current_user.id if current_user else None
+    doc, segments = await _get_doc_or_404(job_id, db, requester_id=requester_id)
+    job = await get_job(db, job_id, requester_id=requester_id)
     from app.exports.docx_export import generate_docx
     docx_bytes = generate_docx(job, doc, segments)
     return StreamingResponse(
@@ -172,12 +184,14 @@ async def patch_segment(
     sequence_number: int,
     body: PatchSegmentRequest,
     db: DbSession,
+    current_user: OptionalUser,
 ) -> TranscriptSegmentResponse:
     from datetime import datetime, timezone
     from app.models.audit_log import AuditLog
     from app.models.transcript_segment import TranscriptSegment
 
-    job = await get_job(db, job_id)
+    requester_id = current_user.id if current_user else None
+    job = await get_job(db, job_id, requester_id=requester_id)
     if not job:
         raise HTTPException(status_code=404, detail="Transcription job not found.")
 
@@ -213,7 +227,10 @@ async def patch_segment(
     return _seg_to_response(seg)
 
 
-async def _get_doc_or_404(job_id, db):
+async def _get_doc_or_404(job_id, db, *, requester_id=None):
+    job = await get_job(db, job_id, requester_id=requester_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Transcription job not found.")
     doc, segments = await get_transcript(db, job_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Transcript not available.")
