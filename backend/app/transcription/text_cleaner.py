@@ -42,3 +42,22 @@ def normalize_casing(text: str) -> str:
     text = text[0].upper() + text[1:]
     text = _SENTENCE_START.sub(lambda m: ' ' + m.group(1).upper(), text)
     return text
+
+
+def clean_transcript_text(text: str) -> str:
+    """Full cleanup pipeline: fillers → punctuation → casing."""
+    text = remove_filler_artifacts(text)
+    text = normalize_punctuation(text)
+    text = normalize_casing(text)
+    return text.strip()
+
+
+def apply_text_cleanup(segments: list[dict]) -> list[dict]:
+    """Apply text cleanup to each segment, preserving start/end timestamps and all other fields."""
+    cleaned = []
+    for seg in segments:
+        result = dict(seg)
+        result["text"] = clean_transcript_text(seg.get("text", ""))
+        if result["text"]:
+            cleaned.append(result)
+    return cleaned
