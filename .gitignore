@@ -92,8 +92,8 @@ next-env.d.ts
 .env.local
 .env.*.local
 
-# Docker
-.dockerignore
+# Docker (keep dockerignore files tracked)
+# .dockerignore
 
 # Media (NEVER store)
 *.mp4
