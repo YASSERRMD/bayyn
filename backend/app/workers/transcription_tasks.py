@@ -106,8 +106,9 @@ def _store_transcript(
     strategy: ProcessingStrategy,
 ) -> None:
     from app.transcription.caption_processor import normalize_segments
+    from app.transcription.text_cleaner import apply_text_cleanup
 
-    normalized = normalize_segments(segments)
+    normalized = apply_text_cleanup(normalize_segments(segments))
     full_text = " ".join(s["text"].strip() for s in normalized)
     word_count = len(full_text.split())
 
