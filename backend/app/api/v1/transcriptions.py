@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import OptionalUser, RequiredUser
 from app.database import get_session
 from app.main import limiter
 from app.config import settings
@@ -35,9 +36,11 @@ async def create_transcription(
     request: Request,
     body: CreateTranscriptionRequest,
     db: DbSession,
+    current_user: OptionalUser,
 ) -> CreateTranscriptionResponse:
     try:
-        job = await create_transcription_job(db, body.url)
+        user_id = current_user.id if current_user else None
+        job = await create_transcription_job(db, body.url, user_id=user_id)
     except URLValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -50,10 +53,11 @@ async def create_transcription(
 @router.get("", response_model=TranscriptionJobListResponse)
 async def list_transcriptions(
     db: DbSession,
+    current_user: RequiredUser,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
 ) -> TranscriptionJobListResponse:
-    jobs, total = await list_jobs(db, offset=offset, limit=limit)
+    jobs, total = await list_jobs(db, offset=offset, limit=limit, user_id=current_user.id)
     return TranscriptionJobListResponse(
         jobs=[_job_to_response(j) for j in jobs],
         total=total,

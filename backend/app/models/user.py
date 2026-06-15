@@ -3,7 +3,7 @@ from typing import Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, text
+from sqlalchemy import Boolean, DateTime, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,10 @@ class User(Base):
     )
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
