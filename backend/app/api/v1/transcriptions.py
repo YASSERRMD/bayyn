@@ -130,9 +130,14 @@ async def delete_transcription(job_id: uuid.UUID, db: DbSession) -> None:
 
 
 @router.get("/{job_id}/export/txt")
-async def export_txt(job_id: uuid.UUID, db: DbSession) -> StreamingResponse:
-    doc, _ = await _get_doc_or_404(job_id, db)
-    content = doc.full_text.encode("utf-8")
+async def export_txt(
+    job_id: uuid.UUID,
+    db: DbSession,
+    timestamps: bool = Query(False, description="Prefix each segment with [HH:MM:SS]"),
+) -> StreamingResponse:
+    doc, segments = await _get_doc_or_404(job_id, db)
+    from app.exports.txt_export import generate_txt
+    content = generate_txt(doc, include_timestamps=timestamps, segments=segments).encode("utf-8")
     return StreamingResponse(
         iter([content]),
         media_type="text/plain; charset=utf-8",
