@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bayyn
+      POSTGRES_PASSWORD: bayyn
+      POSTGRES_DB: bayyn
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bayyn -d bayyn"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bayyn_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - bayyn_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bayyn:bayyn@postgres:5432/bayyn
+      SYNC_DATABASE_URL: postgresql://bayyn:bayyn@postgres:5432/bayyn
+      REDIS_URL: redis://redis:6379/0
+      TEMP_DIR: /tmp/bayyn
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "
+        cd /app &&
+        SYNC_DATABASE_URL=postgresql://bayyn:bayyn@postgres:5432/bayyn alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+      "
+    networks:
+      - bayyn_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bayyn:bayyn@postgres:5432/bayyn
+      SYNC_DATABASE_URL: postgresql://bayyn:bayyn@postgres:5432/bayyn
+      REDIS_URL: redis://redis:6379/0
+      TEMP_DIR: /tmp/bayyn
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - bayyn_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - bayyn_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  bayyn_net:
+    driver: bridge
