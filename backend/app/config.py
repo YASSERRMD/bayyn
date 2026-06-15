@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     temp_dir: str = "/tmp/bayyn"
     max_video_duration_seconds: int = 7200
+    chunk_threshold_seconds: int = 600
+    chunk_duration_seconds: int = 600
     job_timeout_seconds: int = 3600
     max_transcript_chars: int = 1_000_000
 
