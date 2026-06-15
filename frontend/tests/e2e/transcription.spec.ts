@@ -30,16 +30,22 @@ test.describe("Home page", () => {
 });
 
 test.describe("History page", () => {
-  test("loads without crashing", async ({ page }) => {
+  test("redirects to login when unauthenticated", async ({ page }) => {
     await page.goto("/history");
-    await expect(page).toHaveTitle(/bayyn/i);
+    await expect(page).toHaveURL(/\/login/);
   });
 
-  test("shows empty state when no transcripts", async ({ page }) => {
+  test("shows empty state when authenticated with no transcripts", async ({ page }) => {
+    // Inject a fake token so AuthContext thinks user is logged in
+    await page.addInitScript(() => {
+      localStorage.setItem("bayyn_access_token", "fake-token");
+    });
+    // Mock GET /auth/me to return a user
+    await page.route("**/api/auth/me", async (route) => {
+      await route.fulfill({ json: { id: "user-1", email: "test@example.com", name: null, is_active: true } });
+    });
     await page.route("**/api/transcriptions*", async (route) => {
-      await route.fulfill({
-        json: { jobs: [], total: 0 },
-      });
+      await route.fulfill({ json: { jobs: [], total: 0 } });
     });
     await page.goto("/history");
     await expect(page.getByText(/no transcripts yet/i)).toBeVisible();
