@@ -1,6 +1,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,11 +17,13 @@ from app.security.url_validator import validate_url
 async def create_transcription_job(
     db: AsyncSession,
     url: str,
+    user_id: Optional[uuid.UUID] = None,
 ) -> TranscriptionJob:
     source_type, source_domain = validate_url(url)
 
     job = TranscriptionJob(
         id=uuid.uuid4(),
+        user_id=user_id,
         source_url=url,
         source_type=source_type,
         source_domain=source_domain,
@@ -53,18 +56,23 @@ async def get_job(db: AsyncSession, job_id: uuid.UUID) -> TranscriptionJob | Non
 
 
 async def list_jobs(
-    db: AsyncSession, offset: int = 0, limit: int = 50
+    db: AsyncSession,
+    offset: int = 0,
+    limit: int = 50,
+    user_id: Optional[uuid.UUID] = None,
 ) -> tuple[list[TranscriptionJob], int]:
+    base_filter = [TranscriptionJob.deleted_at.is_(None)]
+    if user_id is not None:
+        base_filter.append(TranscriptionJob.user_id == user_id)
+
     count_result = await db.execute(
-        select(func.count(TranscriptionJob.id)).where(
-            TranscriptionJob.deleted_at.is_(None)
-        )
+        select(func.count(TranscriptionJob.id)).where(*base_filter)
     )
     total = count_result.scalar_one()
 
     result = await db.execute(
         select(TranscriptionJob)
-        .where(TranscriptionJob.deleted_at.is_(None))
+        .where(*base_filter)
         .order_by(TranscriptionJob.created_at.desc())
         .offset(offset)
         .limit(limit)

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     rate_limit_per_minute: int = 10
     secret_key: str = "change-me-in-production"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     # When True (default), job records are soft-deleted (deleted_at set).
     # When False, job records are permanently removed along with their transcript.

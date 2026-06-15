@@ -2,6 +2,21 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : "/api";
 
+const TOKEN_KEY = "bayyn_access_token";
+
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setStoredToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 export type ProcessingStrategy = "caption" | "whisper" | "unknown";
 
@@ -60,12 +75,33 @@ export interface JobListResponse {
   total: number;
 }
 
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export interface UserResponse {
+  id: string;
+  email: string | null;
+  name: string | null;
+  is_active: boolean;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...options?.headers,
+    },
     ...options,
   });
 
@@ -83,6 +119,23 @@ async function request<T>(
 }
 
 export const api = {
+  // Auth
+  register: (email: string, password: string, name?: string): Promise<TokenResponse> =>
+    request("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, name }),
+    }),
+
+  login: (email: string, password: string): Promise<TokenResponse> =>
+    request("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  getMe: (): Promise<UserResponse> =>
+    request("/auth/me"),
+
+  // Transcription
   createJob: (url: string): Promise<CreateJobResponse> =>
     request("/transcriptions", {
       method: "POST",
