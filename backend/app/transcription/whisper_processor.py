@@ -72,7 +72,11 @@ def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> tuple[li
     file_size = wav_path.stat().st_size
     logger.info("Audio prepared size_bytes=%d", file_size)
 
-    segments, detected_language = _run_whisper(wav_path)
+    use_chunked = wav_path.stat().st_size > 0 and _should_chunk(wav_path)
+    if use_chunked:
+        segments, detected_language = _transcribe_chunked(wav_path, temp_dir)
+    else:
+        segments, detected_language = _run_whisper(wav_path)
 
     try:
         wav_path.unlink()
@@ -81,6 +85,46 @@ def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> tuple[li
         logger.warning("Failed to delete temp audio: %s", type(exc).__name__)
 
     return segments, detected_language
+
+
+def _should_chunk(wav_path: Path) -> bool:
+    """Estimate audio duration from file size; return True if chunking is warranted."""
+    # PCM s16le 16kHz mono: 16000 samples/s * 2 bytes/sample = 32000 bytes/s
+    bytes_per_second = 32000
+    estimated_seconds = wav_path.stat().st_size / bytes_per_second
+    return estimated_seconds > settings.chunk_threshold_seconds
+
+
+def _transcribe_chunked(wav_path: Path, temp_dir: Path) -> tuple[list[dict], str]:
+    """Split wav into chunks, transcribe each, offset timestamps, merge results."""
+    from app.transcription.audio_chunker import chunk_audio, delete_chunks
+
+    chunks = chunk_audio(wav_path, settings.chunk_duration_seconds, temp_dir)
+    all_segments: list[dict] = []
+    detected_language = "en"
+
+    for chunk_path, start_offset in chunks:
+        try:
+            chunk_segs, chunk_lang = _run_whisper(chunk_path)
+            if chunk_segs:
+                detected_language = chunk_lang
+            for seg in chunk_segs:
+                all_segments.append({
+                    **seg,
+                    "start": seg["start"] + start_offset,
+                    "end": seg["end"] + start_offset,
+                })
+            logger.info("Chunk offset=%.0fs segments=%d", start_offset, len(chunk_segs))
+        except Exception as exc:
+            logger.warning(
+                "Chunk at offset=%.0fs failed: %s — skipping",
+                start_offset,
+                type(exc).__name__,
+            )
+
+    delete_chunks(chunks)
+    logger.info("Chunked transcription complete total_segments=%d", len(all_segments))
+    return all_segments, detected_language
 
 
 def _run_whisper(wav_path: Path) -> tuple[list[dict], str]:
