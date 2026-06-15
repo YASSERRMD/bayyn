@@ -26,11 +26,12 @@ def test_temp_audio_deleted_after_transcription(tmp_path):
         MockModel.return_value = mock_model_instance
 
         from app.transcription.whisper_processor import _run_whisper
-        results = _run_whisper(wav_path)
+        results, lang = _run_whisper(wav_path)
 
     assert not wav_path.exists(), "Temp audio file was not deleted after transcription"
     assert len(results) == 1
     assert results[0]["text"] == "Hello world"
+    assert lang == "en"
 
 
 def test_whisper_segments_have_correct_structure():
@@ -55,7 +56,7 @@ def test_whisper_segments_have_correct_structure():
             wav_path = Path(f.name)
 
         from app.transcription.whisper_processor import _run_whisper
-        results = _run_whisper(wav_path)
+        results, lang = _run_whisper(wav_path)
 
     assert results[0]["start"] == 1.5
     assert results[0]["end"] == 4.3
@@ -81,7 +82,7 @@ def test_no_audio_stream_url_in_results():
         mock_model_instance.transcribe.return_value = ([], mock_info)
         MockModel.return_value = mock_model_instance
 
-        results = _run_whisper(wav_path)
+        results, _lang = _run_whisper(wav_path)
 
     for seg in results:
         assert "url" not in seg

@@ -90,14 +90,27 @@ def _run_transcription(job_uuid: uuid.UUID, temp_dir) -> None:
         logger.info("Caption strategy for job=%s segments=%d", job_uuid, len(captions))
         segments_data = captions
         strategy = ProcessingStrategy.caption
+        detected_language = adapter.get_caption_language()
     else:
         logger.info("Whisper strategy for job=%s", job_uuid)
         from app.transcription.whisper_processor import transcribe_audio
         audio_stream_url = adapter.get_audio_stream_url()
-        segments_data = transcribe_audio(audio_stream_url, temp_dir, job_uuid)
+        segments_data, detected_language = transcribe_audio(audio_stream_url, temp_dir, job_uuid)
         strategy = ProcessingStrategy.whisper
 
+    _update_job_language(job_uuid, detected_language)
     _store_transcript(job_uuid, segments_data, strategy)
+
+
+def _update_job_language(job_uuid: uuid.UUID, detected_language: str) -> None:
+    from app.transcription.language_detector import DEFAULT_LANGUAGE
+    language = detected_language or DEFAULT_LANGUAGE
+    with _get_session() as db:
+        job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
+        if job:
+            job.language = language
+            db.commit()
+    logger.info("Updated job=%s detected_language=%s", job_uuid, language)
 
 
 def _store_transcript(
