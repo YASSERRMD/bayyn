@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -7,15 +8,33 @@ import { Loader2, AlertCircle, Trash2, ExternalLink, FileText } from "lucide-rea
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, TranscriptionJob } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { formatDate, formatDuration, STATUS_LABELS } from "@/lib/utils";
 
 export default function HistoryPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/login");
+    }
+  }, [authLoading, user, router]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["jobs"],
     queryFn: () => api.listJobs(),
+    enabled: !!user,
   });
+
+  if (authLoading || (!user && !authLoading)) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-bayyn-navy" />
+      </div>
+    );
+  }
 
   const handleDelete = async (jobId: string) => {
     if (!confirm("Delete this transcript? This cannot be undone.")) return;

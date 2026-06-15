@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { Providers } from "./providers";
+import { NavUser } from "@/components/nav-user";
 
 export const metadata: Metadata = {
   title: "Bayyn — Transcript, Not Media",
@@ -31,6 +32,7 @@ function Navbar() {
           >
             Privacy
           </Link>
+          <NavUser />
         </div>
       </div>
     </nav>
