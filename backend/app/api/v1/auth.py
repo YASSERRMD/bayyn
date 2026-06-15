@@ -41,7 +41,7 @@ async def register(body: RegisterRequest, db: DbSession) -> TokenResponse:
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token(str(user.id), user.email)
+    token = create_access_token(str(user.id), user.email, is_admin=False)
     return TokenResponse(access_token=token)
 
 
@@ -62,7 +62,7 @@ async def login(body: LoginRequest, db: DbSession) -> TokenResponse:
             detail="Account is disabled.",
         )
 
-    token = create_access_token(str(user.id), user.email)
+    token = create_access_token(str(user.id), user.email, is_admin=getattr(user, "is_admin", False))
     return TokenResponse(access_token=token)
 
 
