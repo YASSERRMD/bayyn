@@ -30,3 +30,15 @@ def normalize_punctuation(text: str) -> str:
     text = _MISSING_SPACE_AFTER_PUNCT.sub(r'\1 \2', text)
     text = _MULTI_SPACE.sub(' ', text).strip()
     return text
+
+
+_SENTENCE_START = re.compile(r'(?<=[.!?])\s+([a-z])')
+
+
+def normalize_casing(text: str) -> str:
+    """Capitalize the first character of the text and after sentence-ending punctuation."""
+    if not text:
+        return text
+    text = text[0].upper() + text[1:]
+    text = _SENTENCE_START.sub(lambda m: ' ' + m.group(1).upper(), text)
+    return text
