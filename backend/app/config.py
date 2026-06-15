@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
 
     rate_limit_per_minute: int = 10
+    max_active_jobs_per_user: int = 5
+    max_daily_jobs_per_user: int = 20
     secret_key: str = "change-me-in-production"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
 
