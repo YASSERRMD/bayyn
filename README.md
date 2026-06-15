@@ -191,23 +191,49 @@ npx playwright test
 - [ ] LLM summary (opt-in)
 - [ ] Multi-language UI
 
+## Quick Start Verification
+
+After `docker compose up --build`:
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Submit a YouTube URL
+curl -X POST http://localhost:8000/api/transcriptions \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+
+# Check job status (replace {job_id} with response)
+curl http://localhost:8000/api/transcriptions/{job_id}
+
+# Get transcript when completed
+curl http://localhost:8000/api/transcriptions/{job_id}/transcript
+```
+
 ## Verification Checklist
 
-- [ ] Frontend opens at http://localhost:3000
-- [ ] User can paste YouTube URL
-- [ ] Job is created and returns job_id
-- [ ] Worker picks up job and processes it
-- [ ] Caption-first strategy works for captioned videos
-- [ ] Whisper fallback works for non-captioned videos
-- [ ] Transcript is stored in PostgreSQL only
-- [ ] Video/audio is never stored
-- [ ] `media_stored` is always `false`
-- [ ] Temp directory is deleted after processing
-- [ ] Transcript can be viewed in the UI
-- [ ] Transcript can be exported as TXT, SRT, DOCX
-- [ ] Transcript can be deleted
-- [ ] Private IP URLs are rejected
-- [ ] `localhost` URLs are rejected
+- [x] Frontend opens at http://localhost:3000
+- [x] User can paste YouTube URL
+- [x] Job is created and returns job_id
+- [x] Worker picks up job and processes it
+- [x] Caption-first strategy works for captioned videos
+- [x] Whisper fallback works for non-captioned videos
+- [x] Transcript is stored in PostgreSQL only
+- [x] Video/audio is never stored
+- [x] `media_stored` is always `false` (enforced + tested)
+- [x] Temp directory is deleted after processing (success + failure)
+- [x] Transcript can be viewed in the UI (full + segments tabs)
+- [x] Transcript can be exported as TXT, SRT, DOCX
+- [x] Transcript can be deleted
+- [x] Private IP URLs are rejected (tested)
+- [x] `localhost` URLs are rejected (tested)
+- [x] `file://` URLs are rejected (tested)
+- [x] Audio stream URLs never appear in logs (sanitized)
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for full details on URL validation, IP blocking, rate limiting, and temp file policy.
 
 ---
 
