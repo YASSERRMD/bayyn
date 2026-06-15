@@ -43,12 +43,9 @@ class YouTubeSourceAdapter(BaseSourceAdapter):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(self.url, download=False)
 
+        from app.transcription.duration_validator import validate_duration
         duration = info.get("duration") or 0
-        if duration > settings.max_video_duration_seconds:
-            raise ValueError(
-                f"Video duration {duration}s exceeds maximum "
-                f"{settings.max_video_duration_seconds}s."
-            )
+        validate_duration(duration, settings.max_video_duration_seconds)
 
         return {
             "title": info.get("title"),
