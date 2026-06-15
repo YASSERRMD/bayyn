@@ -1,23 +1,27 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from app.models.transcript_segment import TranscriptSegment
+from typing import Any
 
 
 def generate_srt(segments: list[Any]) -> str:
-    lines = []
-    for i, seg in enumerate(segments, start=1):
-        start_ts = _seconds_to_srt_time(float(seg.start_seconds))
-        end_ts = _seconds_to_srt_time(float(seg.end_seconds))
-        lines.append(str(i))
-        lines.append(f"{start_ts} --> {end_ts}")
-        lines.append(seg.text.strip())
+    lines: list[str] = []
+    index = 1
+    for seg in segments:
+        text = seg.text.strip()
+        if not text:
+            continue
+        start = max(0.0, float(seg.start_seconds))
+        end = float(seg.end_seconds)
+        if end <= start:
+            end = start + 0.001
+        lines.append(str(index))
+        lines.append(f"{_to_srt_time(start)} --> {_to_srt_time(end)}")
+        lines.append(text)
         lines.append("")
+        index += 1
     return "\n".join(lines)
 
 
-def _seconds_to_srt_time(seconds: float) -> str:
+def _to_srt_time(seconds: float) -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)

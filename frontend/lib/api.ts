@@ -100,6 +100,9 @@ export const api = {
   deleteJob: (jobId: string): Promise<void> =>
     request(`/transcriptions/${jobId}`, { method: "DELETE" }),
 
-  exportUrl: (jobId: string, format: "txt" | "srt" | "docx") =>
-    `${API_BASE}/transcriptions/${jobId}/export/${format}`,
+  exportUrl: (jobId: string, format: "txt" | "srt" | "docx", options?: { timestamps?: boolean }) => {
+    const base = `${API_BASE}/transcriptions/${jobId}/export/${format}`;
+    if (format === "txt" && options?.timestamps) return `${base}?timestamps=true`;
+    return base;
+  },
 };
