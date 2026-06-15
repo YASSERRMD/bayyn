@@ -76,6 +76,8 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
         job.status = JobStatus.processing
         job.started_at = datetime.now(timezone.utc)
         job.retry_count = attempt
+        job.progress_pct = 0
+        job.current_step = "queued"
         db.commit()
 
     temp_dir = TempManager.create_job_dir(job_uuid)
@@ -134,6 +136,7 @@ def _run_transcription(job_uuid: uuid.UUID, temp_dir) -> None:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
         url = job.source_url
 
+    _update_progress(job_uuid, 5, "fetching_metadata")
     adapter = YouTubeSourceAdapter(url)
     metadata = adapter.get_metadata()
 
@@ -144,6 +147,7 @@ def _run_transcription(job_uuid: uuid.UUID, temp_dir) -> None:
         job.language = metadata.get("language", settings.default_language)
         db.commit()
 
+    _update_progress(job_uuid, 15, "extracting_captions")
     captions = adapter.get_captions()
 
     if captions:
@@ -151,15 +155,31 @@ def _run_transcription(job_uuid: uuid.UUID, temp_dir) -> None:
         segments_data = captions
         strategy = ProcessingStrategy.caption
         detected_language = adapter.get_caption_language()
+        _update_progress(job_uuid, 70, "processing_captions")
     else:
         logger.info("Whisper strategy for job=%s", job_uuid)
+        _update_progress(job_uuid, 25, "downloading_audio")
         from app.transcription.whisper_processor import transcribe_audio
         audio_stream_url = adapter.get_audio_stream_url()
+        _update_progress(job_uuid, 35, "transcribing_audio")
         segments_data, detected_language = transcribe_audio(audio_stream_url, temp_dir, job_uuid)
+        _update_progress(job_uuid, 75, "transcription_complete")
         strategy = ProcessingStrategy.whisper
 
+    _update_progress(job_uuid, 85, "saving_transcript")
     _update_job_language(job_uuid, detected_language)
     _store_transcript(job_uuid, segments_data, strategy)
+
+
+def _update_progress(job_uuid: uuid.UUID, pct: int, step: str) -> None:
+    pct = max(0, min(100, pct))
+    with _get_session() as db:
+        job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
+        if job:
+            job.progress_pct = pct
+            job.current_step = step
+            db.commit()
+    logger.info("Progress job=%s pct=%d step=%s", job_uuid, pct, step)
 
 
 def _update_job_language(job_uuid: uuid.UUID, detected_language: str) -> None:
@@ -225,6 +245,8 @@ def _store_transcript(
         job.processing_strategy = strategy
         job.completed_at = datetime.now(timezone.utc)
         job.media_stored = False
+        job.progress_pct = 100
+        job.current_step = "completed"
 
         db.add(AuditLog(
             job_id=job_uuid,

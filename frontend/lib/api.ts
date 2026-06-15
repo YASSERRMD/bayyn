@@ -16,6 +16,10 @@ export interface TranscriptionJob {
   status: JobStatus;
   processing_strategy: ProcessingStrategy;
   error_message: string | null;
+  progress_pct: number;
+  current_step: string | null;
+  retry_count: number;
+  is_dead_letter: boolean;
   media_stored: boolean;
   created_at: string;
   started_at: string | null;

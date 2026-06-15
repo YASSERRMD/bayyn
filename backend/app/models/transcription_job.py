@@ -46,6 +46,10 @@ class TranscriptionJob(Base):
     processing_strategy: Mapped[ProcessingStrategy] = mapped_column(
         Enum(ProcessingStrategy), nullable=False, default=ProcessingStrategy.unknown
     )
+    progress_pct: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    current_step: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
