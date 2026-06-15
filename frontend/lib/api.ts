@@ -34,6 +34,7 @@ export interface TranscriptSegment {
   confidence: number | null;
   speaker_label: string | null;
   low_confidence: boolean;
+  updated_at: string | null;
 }
 
 export interface Transcript {
@@ -99,6 +100,12 @@ export const api = {
 
   deleteJob: (jobId: string): Promise<void> =>
     request(`/transcriptions/${jobId}`, { method: "DELETE" }),
+
+  patchSegment: (jobId: string, sequenceNumber: number, text: string): Promise<TranscriptSegment> =>
+    request(`/transcriptions/${jobId}/segments/${sequenceNumber}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text }),
+    }),
 
   exportUrl: (jobId: string, format: "txt" | "srt" | "docx", options?: { timestamps?: boolean }) => {
     const base = `${API_BASE}/transcriptions/${jobId}/export/${format}`;

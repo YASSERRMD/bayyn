@@ -4,10 +4,11 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Copy, Check, Download, FileText, AlignLeft, Clock,
   AlertTriangle, Info, Search, X, ChevronUp, ChevronDown,
+  Pencil, Save, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Transcript } from "@/lib/api";
+import { Transcript, TranscriptSegment, api } from "@/lib/api";
 import { formatTimestamp, splitHighlight, findMatchingSegmentIndices } from "@/lib/utils";
 
 interface TranscriptViewerProps {
@@ -28,11 +29,25 @@ export function TranscriptViewer({
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+  // Local segment overrides (seq_number → text) for optimistic edits
+  const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
+  const [editingSeq, setEditingSeq] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [savingSeq, setSavingSeq] = useState<number | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const segmentRefs = useRef<Array<HTMLDivElement | null>>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
 
-  const matchingIndices = findMatchingSegmentIndices(transcript.segments, searchQuery);
+  // Merge server segments with local edits
+  const displayedSegments: TranscriptSegment[] = transcript.segments.map((s) =>
+    editedTexts[s.sequence_number] !== undefined
+      ? { ...s, text: editedTexts[s.sequence_number] }
+      : s
+  );
+
+  const matchingIndices = findMatchingSegmentIndices(displayedSegments, searchQuery);
   const matchCount = matchingIndices.length;
 
   useEffect(() => {
@@ -44,6 +59,12 @@ export function TranscriptViewer({
     const segIdx = matchingIndices[activeMatchIdx];
     segmentRefs.current[segIdx]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeMatchIdx, matchingIndices, matchCount, activeTab]);
+
+  useEffect(() => {
+    if (editingSeq !== null) {
+      editInputRef.current?.focus();
+    }
+  }, [editingSeq]);
 
   const handleSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -62,6 +83,38 @@ export function TranscriptViewer({
     },
     [matchCount]
   );
+
+  const startEdit = (seg: TranscriptSegment) => {
+    setEditingSeq(seg.sequence_number);
+    setEditDraft(editedTexts[seg.sequence_number] ?? seg.text);
+    setEditError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingSeq(null);
+    setEditDraft("");
+    setEditError(null);
+  };
+
+  const saveEdit = async (seqNum: number) => {
+    const trimmed = editDraft.trim();
+    if (!trimmed) {
+      setEditError("Segment text must not be empty.");
+      return;
+    }
+    setSavingSeq(seqNum);
+    setEditError(null);
+    try {
+      await api.patchSegment(jobId, seqNum, trimmed);
+      setEditedTexts((prev) => ({ ...prev, [seqNum]: trimmed }));
+      setEditingSeq(null);
+      setEditDraft("");
+    } catch (err: unknown) {
+      setEditError(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setSavingSeq(null);
+    }
+  };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(transcript.full_text);
@@ -252,10 +305,13 @@ export function TranscriptViewer({
       {/* Segments tab */}
       {activeTab === "segments" && (
         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-          {transcript.segments.map((seg, idx) => {
+          {displayedSegments.map((seg, idx) => {
             const isMatch = matchCount > 0 && matchingIndices.includes(idx);
             const isActiveMatch = isMatch && matchingIndices[activeMatchIdx] === idx;
             const parts = splitHighlight(seg.text, searchQuery);
+            const isEditing = editingSeq === seg.sequence_number;
+            const isSaving = savingSeq === seg.sequence_number;
+            const wasEdited = editedTexts[seg.sequence_number] !== undefined;
 
             if (searchQuery.trim() && !isMatch) return null;
 
@@ -264,7 +320,7 @@ export function TranscriptViewer({
                 key={seg.sequence_number}
                 ref={(el) => { segmentRefs.current[idx] = el; }}
                 data-testid={`segment-${seg.sequence_number}`}
-                className={`flex gap-3 rounded-lg border p-3 transition-colors ${
+                className={`flex gap-3 rounded-lg border p-3 transition-colors group ${
                   isActiveMatch
                     ? "bg-bayyn-navy/5 border-bayyn-navy/30 ring-1 ring-bayyn-navy/20"
                     : seg.low_confidence
@@ -276,28 +332,82 @@ export function TranscriptViewer({
                   {formatTimestamp(seg.start)}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-bayyn-text leading-relaxed">
-                    {parts.map((part, pi) =>
-                      part.match ? (
-                        <mark
-                          key={pi}
-                          className="bg-bayyn-gold/30 text-bayyn-navy rounded px-0.5"
-                        >
-                          {part.text}
-                        </mark>
-                      ) : (
-                        <span key={pi}>{part.text}</span>
-                      )
-                    )}
-                  </p>
-                  {seg.low_confidence && (
-                    <span className="inline-flex items-center gap-1 mt-1 text-xs text-yellow-700">
-                      <AlertTriangle className="w-3 h-3" />
-                      low confidence
-                      {seg.confidence !== null && (
-                        <span>({(seg.confidence * 100).toFixed(0)}%)</span>
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea
+                        ref={editInputRef}
+                        aria-label={`Edit segment ${seg.sequence_number}`}
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") cancelEdit();
+                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault();
+                            saveEdit(seg.sequence_number);
+                          }
+                        }}
+                        rows={3}
+                        className="w-full text-sm border border-bayyn-navy/30 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-bayyn-navy/30"
+                      />
+                      {editError && (
+                        <p className="text-xs text-red-500">{editError}</p>
                       )}
-                    </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          disabled={isSaving}
+                          onClick={() => saveEdit(seg.sequence_number)}
+                        >
+                          <Save className="w-3.5 h-3.5 mr-1.5" />
+                          {isSaving ? "Saving…" : "Save"}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={cancelEdit}>
+                          <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Cancel
+                        </Button>
+                        <span className="text-xs text-gray-400">⌘+Enter to save · Esc to cancel</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <p className="text-sm text-bayyn-text leading-relaxed">
+                          {parts.map((part, pi) =>
+                            part.match ? (
+                              <mark
+                                key={pi}
+                                className="bg-bayyn-gold/30 text-bayyn-navy rounded px-0.5"
+                              >
+                                {part.text}
+                              </mark>
+                            ) : (
+                              <span key={pi}>{part.text}</span>
+                            )
+                          )}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {seg.low_confidence && (
+                            <span className="inline-flex items-center gap-1 text-xs text-yellow-700">
+                              <AlertTriangle className="w-3 h-3" />
+                              low confidence
+                              {seg.confidence !== null && (
+                                <span>({(seg.confidence * 100).toFixed(0)}%)</span>
+                              )}
+                            </span>
+                          )}
+                          {wasEdited && (
+                            <span className="text-xs text-bayyn-gold">edited</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        aria-label={`Edit segment ${seg.sequence_number}`}
+                        onClick={() => startEdit(seg)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-bayyn-navy shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

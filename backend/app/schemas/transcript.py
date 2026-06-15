@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 LOW_CONFIDENCE_THRESHOLD = 0.6
 
@@ -16,8 +16,13 @@ class TranscriptSegmentResponse(BaseModel):
     confidence: Optional[float] = None
     speaker_label: Optional[str] = None
     low_confidence: bool = False
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class PatchSegmentRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4096)
 
 
 class TranscriptResponse(BaseModel):
