@@ -73,12 +73,12 @@ def _fail_job(
 def process_transcription_job(self: Task, job_id: str) -> dict:
     job_uuid = uuid.UUID(job_id)
     attempt = self.request.retries  # 0 on first run, +1 on each retry
-    logger.info("Starting transcription job=%s attempt=%d", job_id, attempt)
+    logger.info("starting transcription", extra={"job_id": job_id, "attempt": attempt})
 
     with _get_session() as db:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
         if not job:
-            logger.error("Job not found: %s", job_id)
+            logger.error("job not found", extra={"job_id": job_id})
             return {"status": "error", "message": "job not found"}
 
         job.status = JobStatus.processing
@@ -118,14 +118,18 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
         if attempt < MAX_RETRIES:
             backoff = _exponential_backoff(attempt)
             logger.warning(
-                "Retrying job=%s attempt=%d/%d backoff=%ds exc_type=%s",
-                job_id, attempt + 1, MAX_RETRIES, backoff, type(exc).__name__,
+                "retrying job",
+                extra={"job_id": job_id, "attempt": attempt + 1, "max_retries": MAX_RETRIES,
+                       "backoff_seconds": backoff, "exc_type": type(exc).__name__},
             )
             _log_retry_audit(job_uuid, attempt + 1, audit)
             raise self.retry(exc=exc, countdown=backoff)
 
         # All retries exhausted → dead-letter
-        logger.error("Dead-letter job=%s all %d retries exhausted exc_type=%s", job_id, MAX_RETRIES, type(exc).__name__)
+        logger.error(
+            "dead-letter: all retries exhausted",
+            extra={"job_id": job_id, "max_retries": MAX_RETRIES, "exc_type": type(exc).__name__},
+        )
         _fail_job(job_uuid, user_message, action="job_dead_letter", audit_detail=audit)
         return {"status": "failed", "job_id": job_id}
 
