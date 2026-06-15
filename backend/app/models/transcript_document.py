@@ -1,8 +1,9 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, text
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +22,8 @@ class TranscriptDocument(Base):
     full_text: Mapped[str] = mapped_column(Text, nullable=False)
     word_count: Mapped[int] = mapped_column(Integer, nullable=False)
     segment_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    average_confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    low_confidence_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
