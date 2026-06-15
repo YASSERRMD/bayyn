@@ -257,7 +257,7 @@ CI runs automatically on every PR via GitHub Actions (`.github/workflows/ci.yml`
 - [x] Phase 40: QA assertions (cross-cutting invariant tests)
 - [x] Phase 41: Documentation update
 - [x] Phase 42: Release preparation
-- [ ] Phase 43: Final release
+- [x] Phase 43: Final release — v0.1.0
 
 ## Quick Start Verification
 
