@@ -36,12 +36,19 @@ def _soft_timeout_exc():
 
 
 def _fail_job(job_uuid: uuid.UUID, message: str, action: str = "job_failed") -> None:
+    is_dead_letter = action == "job_dead_letter"
     with _get_session() as db:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
         if job:
             job.status = JobStatus.failed
             job.error_message = message
             job.completed_at = datetime.now(timezone.utc)
+            if is_dead_letter:
+                job.is_dead_letter = True
+                logger.error(
+                    "DEAD_LETTER job=%s retry_count=%d error=%s",
+                    job_uuid, job.retry_count, message,
+                )
             db.add(AuditLog(job_id=job_uuid, action=action, details={"error": message}))
             db.commit()
 
