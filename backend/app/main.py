@@ -62,11 +62,12 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     )
 
 
-from app.api.v1 import admin, auth, metrics, transcriptions  # noqa: E402
+from app.api.v1 import admin, auth, metrics, summaries, transcriptions  # noqa: E402
 app.include_router(transcriptions.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(metrics.router, prefix="/api")
+app.include_router(summaries.router, prefix="/api")
 
 
 @app.get("/health", tags=["health"])
