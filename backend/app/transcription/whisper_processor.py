@@ -17,10 +17,12 @@ FFMPEG_AUDIO_ARGS = [
 ]
 
 
-def transcribe_audio(audio_stream_url: str, temp_dir: Path, job_uuid: uuid.UUID) -> list[dict]:
+def transcribe_audio(
+    audio_stream_url: str, temp_dir: Path, job_uuid: uuid.UUID
+) -> tuple[list[dict], str]:
     """
     Transcribe audio from a stream URL using faster-whisper.
-    Prefers pipe-based processing. Falls back to a temp WAV file if piping fails.
+    Returns (segments, detected_language).
     Never stores the original audio stream URL in logs.
     """
     try:
@@ -39,11 +41,11 @@ def _build_ffmpeg_pipe_cmd(audio_stream_url: str) -> list[str]:
     ]
 
 
-def _transcribe_via_pipe(temp_dir: Path) -> list[dict]:
+def _transcribe_via_pipe(temp_dir: Path) -> tuple[list[dict], str]:
     raise NotImplementedError("Pure pipe not yet supported — using temp file path")
 
 
-def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> list[dict]:
+def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> tuple[list[dict], str]:
     wav_path = temp_dir / "audio.wav"
 
     cmd = [
@@ -70,7 +72,7 @@ def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> list[dic
     file_size = wav_path.stat().st_size
     logger.info("Audio prepared size_bytes=%d", file_size)
 
-    segments = _run_whisper(wav_path)
+    segments, detected_language = _run_whisper(wav_path)
 
     try:
         wav_path.unlink()
@@ -78,11 +80,12 @@ def _transcribe_via_temp_file(audio_stream_url: str, temp_dir: Path) -> list[dic
     except Exception as exc:
         logger.warning("Failed to delete temp audio: %s", type(exc).__name__)
 
-    return segments
+    return segments, detected_language
 
 
-def _run_whisper(wav_path: Path) -> list[dict]:
+def _run_whisper(wav_path: Path) -> tuple[list[dict], str]:
     from faster_whisper import WhisperModel
+    from app.transcription.language_detector import detect_from_whisper_info
 
     model_size = settings.whisper_model
     logger.info("Loading Whisper model=%s", model_size)
@@ -92,12 +95,19 @@ def _run_whisper(wav_path: Path) -> list[dict]:
     segments_iter, info = model.transcribe(
         str(wav_path),
         beam_size=5,
-        language="en",
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 500},
     )
 
-    logger.info("Detected language=%s probability=%.2f", info.language, info.language_probability)
+    detected_language = detect_from_whisper_info(
+        info.language, getattr(info, "language_probability", 1.0)
+    )
+    logger.info(
+        "Whisper detected language=%s probability=%.2f normalized=%s",
+        info.language,
+        getattr(info, "language_probability", 1.0),
+        detected_language,
+    )
 
     results = []
     for seg in segments_iter:
@@ -109,4 +119,4 @@ def _run_whisper(wav_path: Path) -> list[dict]:
         })
 
     logger.info("Whisper produced segments=%d", len(results))
-    return results
+    return results, detected_language
