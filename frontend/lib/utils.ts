@@ -52,3 +52,36 @@ export const STRATEGY_LABELS: Record<string, string> = {
   whisper: "AI Transcription",
   unknown: "Pending",
 };
+
+/** Split text into parts, marking which substrings match the query. */
+export function splitHighlight(
+  text: string,
+  query: string
+): Array<{ text: string; match: boolean }> {
+  if (!query.trim()) return [{ text, match: false }];
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(escaped, "gi");
+  const parts: Array<{ text: string; match: boolean }> = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push({ text: text.slice(last, m.index), match: false });
+    parts.push({ text: m[0], match: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), match: false });
+  return parts;
+}
+
+/** Return indices of segments that contain the query (case-insensitive). */
+export function findMatchingSegmentIndices(
+  segments: Array<{ text: string }>,
+  query: string
+): number[] {
+  if (!query.trim()) return [];
+  const q = query.toLowerCase();
+  return segments.reduce<number[]>((acc, seg, i) => {
+    if (seg.text.toLowerCase().includes(q)) acc.push(i);
+    return acc;
+  }, []);
+}
