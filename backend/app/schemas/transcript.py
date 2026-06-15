@@ -1,8 +1,11 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel
+
+LOW_CONFIDENCE_THRESHOLD = 0.6
 
 
 class TranscriptSegmentResponse(BaseModel):
@@ -10,8 +13,9 @@ class TranscriptSegmentResponse(BaseModel):
     start: float
     end: float
     text: str
-    confidence: float | None = None
-    speaker_label: str | None = None
+    confidence: Optional[float] = None
+    speaker_label: Optional[str] = None
+    low_confidence: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -21,6 +25,10 @@ class TranscriptResponse(BaseModel):
     full_text: str
     word_count: int
     segment_count: int
+    average_confidence: Optional[float] = None
+    low_confidence_count: int = 0
+    has_low_confidence_segments: bool = False
+    accuracy_disclaimer: Optional[str] = None
     segments: list[TranscriptSegmentResponse]
     created_at: datetime
 
