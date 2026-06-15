@@ -25,6 +25,14 @@ YOUTUBE_DOMAINS = {
 class YouTubeSourceAdapter(BaseSourceAdapter):
     """Adapter for YouTube URLs. Caption-first, audio fallback."""
 
+    def __init__(self, url: str) -> None:
+        super().__init__(url)
+        self._detected_caption_language: str = "en"
+
+    def get_caption_language(self) -> str:
+        """Return the language detected during the last get_captions() call."""
+        return self._detected_caption_language
+
     def validate_url(self) -> bool:
         from urllib.parse import urlparse
         host = urlparse(self.url).hostname or ""
@@ -61,30 +69,36 @@ class YouTubeSourceAdapter(BaseSourceAdapter):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(self.url, download=False)
 
+        from app.transcription.language_detector import detect_from_caption_keys
+
         subtitles = info.get("subtitles", {})
         auto_subs = info.get("automatic_captions", {})
 
-        lang_data = (
-            subtitles.get("en")
-            or subtitles.get("en-US")
-            or subtitles.get("en-GB")
-        )
+        lang_data = None
+        detected_key = None
+        for key in ("en", "en-US", "en-GB"):
+            if subtitles.get(key):
+                lang_data = subtitles[key]
+                detected_key = key
+                logger.info("Using manual captions lang=%s", key)
+                break
 
-        if lang_data:
-            logger.info("Using manual English captions")
-        else:
-            lang_data = (
-                auto_subs.get("en")
-                or auto_subs.get("en-US")
-                or auto_subs.get("en-GB")
-            )
-            if lang_data:
-                logger.info("Using auto-generated English captions")
+        if lang_data is None:
+            for key in ("en", "en-US", "en-GB"):
+                if auto_subs.get(key):
+                    lang_data = auto_subs[key]
+                    detected_key = key
+                    logger.info("Using auto-generated captions lang=%s", key)
+                    break
 
-        if not lang_data:
-            logger.info("No captions found, will fall back to Whisper")
+        if lang_data is None:
+            all_keys = list(subtitles.keys()) + list(auto_subs.keys())
+            detected = detect_from_caption_keys(all_keys)
+            logger.info("No English captions found; detected language=%s from available keys=%s", detected, all_keys[:5])
+            self._detected_caption_language = detected
             return []
 
+        self._detected_caption_language = detect_from_caption_keys([detected_key] if detected_key else [])
         return self._parse_caption_data(lang_data, info)
 
     def _parse_caption_data(self, lang_data: list, info: dict) -> list[dict]:
