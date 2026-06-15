@@ -9,7 +9,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.logging_config import configure_logging
+from app.middleware.request_id import RequestIDMiddleware
 
+configure_logging()
 logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
@@ -33,6 +36,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://frontend:3000"],
@@ -67,3 +71,35 @@ app.include_router(admin.router, prefix="/api")
 @app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
     return JSONResponse({"status": "ok", "service": settings.app_name})
+
+
+@app.get("/health/detailed", tags=["health"])
+async def health_detailed() -> JSONResponse:
+    """Component-level health: DB and Redis connectivity."""
+    components: dict = {}
+
+    # Database ping
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text as sa_text
+        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        async with engine.connect() as conn:
+            await conn.execute(sa_text("SELECT 1"))
+        await engine.dispose()
+        components["database"] = "ok"
+    except Exception as exc:
+        logger.warning("health: database unreachable exc_type=%s", type(exc).__name__)
+        components["database"] = "unreachable"
+
+    # Redis ping
+    try:
+        import redis as _redis
+        r = _redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        r.ping()
+        components["redis"] = "ok"
+    except Exception as exc:
+        logger.warning("health: redis unreachable exc_type=%s", type(exc).__name__)
+        components["redis"] = "unreachable"
+
+    overall = "ok" if all(v == "ok" for v in components.values()) else "degraded"
+    return JSONResponse({"status": overall, "service": settings.app_name, "components": components})
