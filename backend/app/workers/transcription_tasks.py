@@ -39,21 +39,28 @@ def _soft_timeout_exc():
         return type("_NeverRaised", (BaseException,), {})
 
 
-def _fail_job(job_uuid: uuid.UUID, message: str, action: str = "job_failed") -> None:
+def _fail_job(
+    job_uuid: uuid.UUID,
+    user_message: str,
+    action: str = "job_failed",
+    audit_detail: dict | None = None,
+) -> None:
+    from app.errors.error_mapper import build_audit_detail
     is_dead_letter = action == "job_dead_letter"
     with _get_session() as db:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
         if job:
             job.status = JobStatus.failed
-            job.error_message = message
+            job.error_message = user_message
             job.completed_at = datetime.now(timezone.utc)
             if is_dead_letter:
                 job.is_dead_letter = True
                 logger.error(
-                    "DEAD_LETTER job=%s retry_count=%d error=%s",
-                    job_uuid, job.retry_count, message,
+                    "DEAD_LETTER job=%s retry_count=%d user_message=%s",
+                    job_uuid, job.retry_count, user_message,
                 )
-            db.add(AuditLog(job_id=job_uuid, action=action, details={"error": message}))
+            details = audit_detail or {"error": user_message}
+            db.add(AuditLog(job_id=job_uuid, action=action, details=details))
             db.commit()
 
 
@@ -94,23 +101,31 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
         if isinstance(exc, SoftExc):
             timeout_msg = "Processing timed out. The video may be too long to transcribe."
             logger.warning("Soft timeout reached job=%s", job_id)
-            _fail_job(job_uuid, timeout_msg, action="job_timeout")
+            from app.errors.error_mapper import build_audit_detail
+            _fail_job(
+                job_uuid,
+                timeout_msg,
+                action="job_timeout",
+                audit_detail=build_audit_detail(exc, context={"job_id": job_id}),
+            )
             return {"status": "timeout", "job_id": job_id}
 
-        safe_message = _sanitize_error(str(exc))
+        from app.errors.error_mapper import build_audit_detail, classify_error
+        user_message = classify_error(exc)
+        audit = build_audit_detail(exc, context={"job_id": job_id, "attempt": attempt})
 
         if attempt < MAX_RETRIES:
             backoff = _exponential_backoff(attempt)
             logger.warning(
-                "Retrying job=%s attempt=%d/%d backoff=%ds error=%s",
-                job_id, attempt + 1, MAX_RETRIES, backoff, safe_message,
+                "Retrying job=%s attempt=%d/%d backoff=%ds exc_type=%s",
+                job_id, attempt + 1, MAX_RETRIES, backoff, type(exc).__name__,
             )
-            _log_retry_audit(job_uuid, attempt + 1, safe_message)
+            _log_retry_audit(job_uuid, attempt + 1, audit)
             raise self.retry(exc=exc, countdown=backoff)
 
         # All retries exhausted → dead-letter
-        logger.error("Dead-letter job=%s all %d retries exhausted", job_id, MAX_RETRIES)
-        _fail_job(job_uuid, safe_message, action="job_dead_letter")
+        logger.error("Dead-letter job=%s all %d retries exhausted exc_type=%s", job_id, MAX_RETRIES, type(exc).__name__)
+        _fail_job(job_uuid, user_message, action="job_dead_letter", audit_detail=audit)
         return {"status": "failed", "job_id": job_id}
 
 
@@ -119,12 +134,12 @@ def _exponential_backoff(attempt: int) -> int:
     return RETRY_BACKOFF_BASE_SECONDS * (2 ** attempt)
 
 
-def _log_retry_audit(job_uuid: uuid.UUID, attempt: int, error: str) -> None:
+def _log_retry_audit(job_uuid: uuid.UUID, attempt: int, audit_detail: dict) -> None:
     with _get_session() as db:
         db.add(AuditLog(
             job_id=job_uuid,
             action="job_retry",
-            details={"attempt": attempt, "error": error},
+            details={**audit_detail, "attempt": attempt},
         ))
         db.commit()
 
@@ -259,12 +274,6 @@ def _store_transcript(
         ))
         db.commit()
 
-
-def _sanitize_error(message: str) -> str:
-    import re
-    message = re.sub(r"https?://\S+", "[URL_REDACTED]", message)
-    message = re.sub(r"/tmp/\S+", "[PATH_REDACTED]", message)
-    return message[:512]
 
 
 @celery_app.task(name="app.workers.transcription_tasks.cleanup_stale_temp_dirs")
