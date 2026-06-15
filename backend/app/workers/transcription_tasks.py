@@ -112,6 +112,17 @@ def _store_transcript(
     full_text = " ".join(s["text"].strip() for s in normalized)
     word_count = len(full_text.split())
 
+    low_confidence_threshold = 0.6
+    confident_values = [
+        float(s["confidence"]) for s in normalized if s.get("confidence") is not None
+    ]
+    average_confidence = (
+        sum(confident_values) / len(confident_values) if confident_values else None
+    )
+    low_confidence_count = sum(
+        1 for v in confident_values if v < low_confidence_threshold
+    )
+
     with _get_session() as db:
         doc = TranscriptDocument(
             id=uuid.uuid4(),
@@ -119,6 +130,8 @@ def _store_transcript(
             full_text=full_text,
             word_count=word_count,
             segment_count=len(normalized),
+            average_confidence=average_confidence,
+            low_confidence_count=low_confidence_count,
         )
         db.add(doc)
 
