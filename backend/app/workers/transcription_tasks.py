@@ -19,12 +19,16 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE_SECONDS = 60
 
-sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
-SyncSession = sessionmaker(sync_engine)
+_sync_engine = None
+_SyncSession = None
 
 
 def _get_session() -> Session:
-    return SyncSession()
+    global _sync_engine, _SyncSession
+    if _SyncSession is None:
+        _sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+        _SyncSession = sessionmaker(_sync_engine)
+    return _SyncSession()
 
 
 def _soft_timeout_exc():
