@@ -3,7 +3,7 @@ from typing import Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, text as sa_text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,7 +14,7 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+        UUID(as_uuid=True), primary_key=True, server_default=sa_text("gen_random_uuid()")
     )
     job_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("transcription_jobs.id"), nullable=False
@@ -26,7 +26,7 @@ class TranscriptSegment(Base):
     confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
     speaker_label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=sa_text("now()"), nullable=False
     )
 
     job: Mapped["TranscriptionJob"] = relationship(  # noqa: F821

@@ -26,5 +26,9 @@ celery_app.conf.update(
             "task": "app.workers.transcription_tasks.cleanup_stale_temp_dirs",
             "schedule": 1800.0,
         },
+        "worker-heartbeat": {
+            "task": "app.workers.transcription_tasks.worker_heartbeat",
+            "schedule": 60.0,
+        },
     },
 )

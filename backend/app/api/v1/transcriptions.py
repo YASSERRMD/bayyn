@@ -184,6 +184,8 @@ def _job_to_response(job) -> TranscriptionJobResponse:
         status=job.status,
         processing_strategy=job.processing_strategy,
         error_message=job.error_message,
+        retry_count=job.retry_count or 0,
+        is_dead_letter=job.is_dead_letter or False,
         media_stored=job.media_stored,
         created_at=job.created_at,
         started_at=job.started_at,

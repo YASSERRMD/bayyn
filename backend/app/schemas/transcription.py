@@ -35,6 +35,8 @@ class TranscriptionJobResponse(BaseModel):
     status: JobStatus
     processing_strategy: ProcessingStrategy
     error_message: str | None
+    retry_count: int = 0
+    is_dead_letter: bool = False
     media_stored: bool
     created_at: datetime
     started_at: datetime | None

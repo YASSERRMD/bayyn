@@ -16,12 +16,19 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
-SyncSession = sessionmaker(sync_engine)
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE_SECONDS = 60
+
+_sync_engine = None
+_SyncSession = None
 
 
 def _get_session() -> Session:
-    return SyncSession()
+    global _sync_engine, _SyncSession
+    if _SyncSession is None:
+        _sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+        _SyncSession = sessionmaker(_sync_engine)
+    return _SyncSession()
 
 
 def _soft_timeout_exc():
@@ -33,20 +40,32 @@ def _soft_timeout_exc():
 
 
 def _fail_job(job_uuid: uuid.UUID, message: str, action: str = "job_failed") -> None:
+    is_dead_letter = action == "job_dead_letter"
     with _get_session() as db:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
         if job:
             job.status = JobStatus.failed
             job.error_message = message
             job.completed_at = datetime.now(timezone.utc)
+            if is_dead_letter:
+                job.is_dead_letter = True
+                logger.error(
+                    "DEAD_LETTER job=%s retry_count=%d error=%s",
+                    job_uuid, job.retry_count, message,
+                )
             db.add(AuditLog(job_id=job_uuid, action=action, details={"error": message}))
             db.commit()
 
 
-@celery_app.task(bind=True, name="app.workers.transcription_tasks.process_transcription_job")
+@celery_app.task(
+    bind=True,
+    name="app.workers.transcription_tasks.process_transcription_job",
+    max_retries=MAX_RETRIES,
+)
 def process_transcription_job(self: Task, job_id: str) -> dict:
     job_uuid = uuid.UUID(job_id)
-    logger.info("Starting transcription job=%s", job_id)
+    attempt = self.request.retries  # 0 on first run, +1 on each retry
+    logger.info("Starting transcription job=%s attempt=%d", job_id, attempt)
 
     with _get_session() as db:
         job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
@@ -56,6 +75,7 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
 
         job.status = JobStatus.processing
         job.started_at = datetime.now(timezone.utc)
+        job.retry_count = attempt
         db.commit()
 
     temp_dir = TempManager.create_job_dir(job_uuid)
@@ -65,19 +85,46 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
         TempManager.cleanup_job_dir(job_uuid, reason="completed")
         return {"status": "completed", "job_id": job_id}
 
-    except _soft_timeout_exc() as exc:
-        TempManager.cleanup_job_dir(job_uuid, reason="timeout")
-        timeout_msg = "Processing timed out. The video may be too long to transcribe."
-        logger.warning("Soft timeout reached job=%s", job_id)
-        _fail_job(job_uuid, timeout_msg, action="job_timeout")
-        return {"status": "timeout", "job_id": job_id}
-
     except Exception as exc:
         TempManager.cleanup_job_dir(job_uuid, reason="failure")
+
+        SoftExc = _soft_timeout_exc()
+        if isinstance(exc, SoftExc):
+            timeout_msg = "Processing timed out. The video may be too long to transcribe."
+            logger.warning("Soft timeout reached job=%s", job_id)
+            _fail_job(job_uuid, timeout_msg, action="job_timeout")
+            return {"status": "timeout", "job_id": job_id}
+
         safe_message = _sanitize_error(str(exc))
-        logger.error("Transcription failed job=%s error=%s", job_id, safe_message)
-        _fail_job(job_uuid, safe_message, action="job_failed")
+
+        if attempt < MAX_RETRIES:
+            backoff = _exponential_backoff(attempt)
+            logger.warning(
+                "Retrying job=%s attempt=%d/%d backoff=%ds error=%s",
+                job_id, attempt + 1, MAX_RETRIES, backoff, safe_message,
+            )
+            _log_retry_audit(job_uuid, attempt + 1, safe_message)
+            raise self.retry(exc=exc, countdown=backoff)
+
+        # All retries exhausted → dead-letter
+        logger.error("Dead-letter job=%s all %d retries exhausted", job_id, MAX_RETRIES)
+        _fail_job(job_uuid, safe_message, action="job_dead_letter")
         return {"status": "failed", "job_id": job_id}
+
+
+def _exponential_backoff(attempt: int) -> int:
+    """Return backoff seconds: 60, 120, 240 for attempts 0, 1, 2."""
+    return RETRY_BACKOFF_BASE_SECONDS * (2 ** attempt)
+
+
+def _log_retry_audit(job_uuid: uuid.UUID, attempt: int, error: str) -> None:
+    with _get_session() as db:
+        db.add(AuditLog(
+            job_id=job_uuid,
+            action="job_retry",
+            details={"attempt": attempt, "error": error},
+        ))
+        db.commit()
 
 
 def _run_transcription(job_uuid: uuid.UUID, temp_dir) -> None:
@@ -201,3 +248,20 @@ def _sanitize_error(message: str) -> str:
 @celery_app.task(name="app.workers.transcription_tasks.cleanup_stale_temp_dirs")
 def cleanup_stale_temp_dirs() -> None:
     TempManager.startup_cleanup()
+
+
+@celery_app.task(name="app.workers.transcription_tasks.worker_heartbeat")
+def worker_heartbeat() -> None:
+    """Periodic heartbeat — logs a structured line so operators can verify the worker is alive."""
+    try:
+        with _get_session() as db:
+            from sqlalchemy import text as sa_text
+            result = db.execute(sa_text("SELECT COUNT(*) FROM transcription_jobs WHERE status='processing'"))
+            processing_count = result.scalar() or 0
+    except Exception:
+        processing_count = -1
+
+    logger.info(
+        "WORKER_HEARTBEAT status=alive processing_jobs=%d",
+        processing_count,
+    )

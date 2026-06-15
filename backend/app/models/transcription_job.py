@@ -47,6 +47,12 @@ class TranscriptionJob(Base):
         Enum(ProcessingStrategy), nullable=False, default=ProcessingStrategy.unknown
     )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    is_dead_letter: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     media_stored: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
