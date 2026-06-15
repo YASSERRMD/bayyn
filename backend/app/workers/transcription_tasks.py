@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from celery import Task
 from sqlalchemy import create_engine
@@ -43,7 +44,7 @@ def _fail_job(
     job_uuid: uuid.UUID,
     user_message: str,
     action: str = "job_failed",
-    audit_detail: dict | None = None,
+    audit_detail: Optional[dict] = None,
 ) -> None:
     from app.errors.error_mapper import build_audit_detail
     is_dead_letter = action == "job_dead_letter"
