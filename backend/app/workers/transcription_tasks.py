@@ -244,3 +244,20 @@ def _sanitize_error(message: str) -> str:
 @celery_app.task(name="app.workers.transcription_tasks.cleanup_stale_temp_dirs")
 def cleanup_stale_temp_dirs() -> None:
     TempManager.startup_cleanup()
+
+
+@celery_app.task(name="app.workers.transcription_tasks.worker_heartbeat")
+def worker_heartbeat() -> None:
+    """Periodic heartbeat — logs a structured line so operators can verify the worker is alive."""
+    try:
+        with _get_session() as db:
+            from sqlalchemy import text as sa_text
+            result = db.execute(sa_text("SELECT COUNT(*) FROM transcription_jobs WHERE status='processing'"))
+            processing_count = result.scalar() or 0
+    except Exception:
+        processing_count = -1
+
+    logger.info(
+        "WORKER_HEARTBEAT status=alive processing_jobs=%d",
+        processing_count,
+    )
