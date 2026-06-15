@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.models.audit_log import AuditLog
 from app.models.transcript_document import TranscriptDocument
 from app.models.transcript_segment import TranscriptSegment
 from app.models.transcription_job import JobStatus, ProcessingStrategy, TranscriptionJob
-from app.security.url_validator import URLValidationError, validate_url
+from app.security.url_validator import validate_url
 
 
 async def create_transcription_job(
@@ -72,41 +72,68 @@ async def list_jobs(
     return list(result.scalars().all()), total
 
 
-async def delete_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
+async def delete_job(
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    *,
+    hard_delete: bool = False,
+) -> bool:
+    """Delete a job and all its transcript data.
+
+    Transcript document and segments are always hard-deleted (privacy invariant:
+    media_stored=False, no content is ever retained).
+
+    The job record itself is soft-deleted by default (deleted_at tombstone) so
+    the audit trail survives. Pass hard_delete=True, or set soft_delete_jobs=False
+    in config, to permanently remove the job record too.
+    """
     job = await get_job(db, job_id)
     if not job:
         return False
 
-    result = await db.execute(
+    # Always hard-delete transcript content
+    doc_result = await db.execute(
         select(TranscriptDocument).where(TranscriptDocument.job_id == job_id)
     )
-    doc = result.scalar_one_or_none()
+    doc = doc_result.scalar_one_or_none()
     if doc:
         await db.delete(doc)
 
-    await db.execute(
-        select(TranscriptSegment).where(TranscriptSegment.job_id == job_id)
-    )
     segs_result = await db.execute(
         select(TranscriptSegment).where(TranscriptSegment.job_id == job_id)
     )
     for seg in segs_result.scalars().all():
         await db.delete(seg)
 
-    job.deleted_at = datetime.now(timezone.utc)
-    db.add(job)
+    truly_hard = hard_delete or not settings.soft_delete_jobs
 
-    audit = AuditLog(
-        job_id=job.id,
-        action="job_deleted",
-        details={"hard_delete_transcript": True},
-    )
-    db.add(audit)
+    if truly_hard:
+        # Remove audit logs before deleting job (FK)
+        logs_result = await db.execute(
+            select(AuditLog).where(AuditLog.job_id == job_id)
+        )
+        for log in logs_result.scalars().all():
+            await db.delete(log)
+        await db.delete(job)
+    else:
+        job.deleted_at = datetime.now(timezone.utc)
+        db.add(job)
+        db.add(AuditLog(
+            job_id=job.id,
+            action="job_deleted",
+            details={
+                "hard_delete_transcript": True,
+                "job_hard_deleted": False,
+            },
+        ))
+
     await db.commit()
     return True
 
 
-async def get_transcript(db: AsyncSession, job_id: uuid.UUID) -> tuple[TranscriptDocument | None, list[TranscriptSegment]]:
+async def get_transcript(
+    db: AsyncSession, job_id: uuid.UUID
+) -> tuple[TranscriptDocument | None, list[TranscriptSegment]]:
     doc_result = await db.execute(
         select(TranscriptDocument).where(TranscriptDocument.job_id == job_id)
     )

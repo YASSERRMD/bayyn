@@ -124,7 +124,15 @@ export function TranscriptViewer({
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    if (!confirm("Delete this transcript? This cannot be undone.")) return;
+    if (
+      !confirm(
+        "Delete this transcript?\n\n" +
+          "The transcript text will be permanently erased. " +
+          "No video or audio was ever stored. " +
+          "This action cannot be undone."
+      )
+    )
+      return;
     setDeleting(true);
     onDelete();
   };

@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 10
     secret_key: str = "change-me-in-production"
 
+    # When True (default), job records are soft-deleted (deleted_at set).
+    # When False, job records are permanently removed along with their transcript.
+    soft_delete_jobs: bool = True
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
