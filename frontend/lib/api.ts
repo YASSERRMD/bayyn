@@ -29,6 +29,7 @@ export interface TranscriptSegment {
   text: string;
   confidence: number | null;
   speaker_label: string | null;
+  low_confidence: boolean;
 }
 
 export interface Transcript {
@@ -36,6 +37,10 @@ export interface Transcript {
   full_text: string;
   word_count: number;
   segment_count: number;
+  average_confidence: number | null;
+  low_confidence_count: number;
+  has_low_confidence_segments: boolean;
+  accuracy_disclaimer: string | null;
   segments: TranscriptSegment[];
   created_at: string;
 }
