@@ -12,9 +12,10 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
-    def __init__(self, user_id: uuid.UUID, email: str):
+    def __init__(self, user_id: uuid.UUID, email: str, *, is_admin: bool = False):
         self.id = user_id
         self.email = email
+        self.is_admin = is_admin
 
 
 def _parse_token(
@@ -26,7 +27,11 @@ def _parse_token(
     if payload is None:
         return None
     try:
-        return CurrentUser(user_id=uuid.UUID(payload["sub"]), email=payload["email"])
+        return CurrentUser(
+            user_id=uuid.UUID(payload["sub"]),
+            email=payload["email"],
+            is_admin=bool(payload.get("is_admin", False)),
+        )
     except (KeyError, ValueError):
         return None
 
@@ -52,5 +57,25 @@ async def get_required_user(
     return user
 
 
+async def get_admin_user(
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(_bearer)],
+) -> CurrentUser:
+    """Return the authenticated admin user or raise 401/403."""
+    user = _parse_token(credentials)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return user
+
+
 OptionalUser = Annotated[Optional[CurrentUser], Depends(get_optional_user)]
 RequiredUser = Annotated[CurrentUser, Depends(get_required_user)]
+RequiredAdmin = Annotated[CurrentUser, Depends(get_admin_user)]

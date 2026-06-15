@@ -25,11 +25,11 @@ def _b64url_decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s)
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, *, is_admin: bool = False) -> str:
     header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
     expire = int(time.time()) + settings.jwt_expire_minutes * 60
     payload = _b64url_encode(
-        json.dumps({"sub": user_id, "email": email, "exp": expire}).encode()
+        json.dumps({"sub": user_id, "email": email, "exp": expire, "is_admin": is_admin}).encode()
     )
     sig_input = f"{header}.{payload}".encode()
     sig = hmac.new(

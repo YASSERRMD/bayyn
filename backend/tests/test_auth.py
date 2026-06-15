@@ -51,8 +51,10 @@ def test_create_and_decode_token():
 def test_tampered_signature_rejected():
     token = create_access_token(str(uuid.uuid4()), "x@example.com")
     parts = token.split(".")
-    # Flip a character in the signature
-    corrupted_sig = parts[2][:-1] + ("A" if parts[2][-1] != "A" else "B")
+    # Corrupt the first character — it encodes 6 full bits so any change is meaningful
+    sig = parts[2]
+    new_first = "Z" if sig[0] != "Z" else "A"
+    corrupted_sig = new_first + sig[1:]
     bad_token = ".".join([parts[0], parts[1], corrupted_sig])
     assert decode_access_token(bad_token) is None
 
