@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.main import limiter
 from app.config import settings
-from app.schemas.transcript import TranscriptResponse, TranscriptSegmentResponse
+from app.schemas.transcript import LOW_CONFIDENCE_THRESHOLD, TranscriptResponse, TranscriptSegmentResponse
 from app.schemas.transcription import (
     CreateTranscriptionRequest,
     CreateTranscriptionResponse,
@@ -78,11 +78,30 @@ async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> Transcrip
     if not doc:
         raise HTTPException(status_code=404, detail="Transcript not yet available.")
 
+    avg_conf = float(doc.average_confidence) if doc.average_confidence is not None else None
+    low_count = doc.low_confidence_count or 0
+    has_low = low_count > 0
+
+    disclaimer = None
+    if has_low:
+        disclaimer = (
+            "This transcript contains segments with low confidence scores. "
+            "Some words may be inaccurate. Please review carefully."
+        )
+    elif avg_conf is None:
+        disclaimer = (
+            "Transcript accuracy may vary. No confidence data is available for this source."
+        )
+
     return TranscriptResponse(
         job_id=job_id,
         full_text=doc.full_text,
         word_count=doc.word_count,
         segment_count=doc.segment_count,
+        average_confidence=avg_conf,
+        low_confidence_count=low_count,
+        has_low_confidence_segments=has_low,
+        accuracy_disclaimer=disclaimer,
         segments=[
             TranscriptSegmentResponse(
                 sequence_number=s.sequence_number,
@@ -91,6 +110,11 @@ async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> Transcrip
                 text=s.text,
                 confidence=float(s.confidence) if s.confidence is not None else None,
                 speaker_label=s.speaker_label,
+                low_confidence=(
+                    float(s.confidence) < LOW_CONFIDENCE_THRESHOLD
+                    if s.confidence is not None
+                    else False
+                ),
             )
             for s in segments
         ],
