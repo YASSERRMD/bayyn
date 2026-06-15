@@ -28,6 +28,9 @@ class TranscriptSegment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=sa_text("now()"), nullable=False
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     job: Mapped["TranscriptionJob"] = relationship(  # noqa: F821
         "TranscriptionJob", back_populates="segments"

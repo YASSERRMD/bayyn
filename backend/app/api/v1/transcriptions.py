@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.main import limiter
 from app.config import settings
-from app.schemas.transcript import LOW_CONFIDENCE_THRESHOLD, TranscriptResponse, TranscriptSegmentResponse
+from app.schemas.transcript import LOW_CONFIDENCE_THRESHOLD, PatchSegmentRequest, TranscriptResponse, TranscriptSegmentResponse
 from app.schemas.transcription import (
     CreateTranscriptionRequest,
     CreateTranscriptionResponse,
@@ -102,22 +102,7 @@ async def get_transcript_endpoint(job_id: uuid.UUID, db: DbSession) -> Transcrip
         low_confidence_count=low_count,
         has_low_confidence_segments=has_low,
         accuracy_disclaimer=disclaimer,
-        segments=[
-            TranscriptSegmentResponse(
-                sequence_number=s.sequence_number,
-                start=float(s.start_seconds),
-                end=float(s.end_seconds),
-                text=s.text,
-                confidence=float(s.confidence) if s.confidence is not None else None,
-                speaker_label=s.speaker_label,
-                low_confidence=(
-                    float(s.confidence) < LOW_CONFIDENCE_THRESHOLD
-                    if s.confidence is not None
-                    else False
-                ),
-            )
-            for s in segments
-        ],
+        segments=[_seg_to_response(s) for s in segments],
         created_at=doc.created_at,
     )
 
@@ -170,11 +155,78 @@ async def export_docx(job_id: uuid.UUID, db: DbSession) -> StreamingResponse:
     )
 
 
+@router.patch(
+    "/{job_id}/segments/{sequence_number}",
+    response_model=TranscriptSegmentResponse,
+)
+async def patch_segment(
+    job_id: uuid.UUID,
+    sequence_number: int,
+    body: PatchSegmentRequest,
+    db: DbSession,
+) -> TranscriptSegmentResponse:
+    from datetime import datetime, timezone
+    from app.models.audit_log import AuditLog
+    from app.models.transcript_segment import TranscriptSegment
+
+    job = await get_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Transcription job not found.")
+
+    from sqlalchemy import select
+    result = await db.execute(
+        select(TranscriptSegment).where(
+            TranscriptSegment.job_id == job_id,
+            TranscriptSegment.sequence_number == sequence_number,
+        )
+    )
+    seg = result.scalar_one_or_none()
+    if not seg:
+        raise HTTPException(status_code=404, detail="Segment not found.")
+
+    old_text = seg.text
+    new_text = body.text.strip()
+    if not new_text:
+        raise HTTPException(status_code=422, detail="Segment text must not be empty.")
+
+    seg.text = new_text
+    seg.updated_at = datetime.now(timezone.utc)
+    db.add(AuditLog(
+        job_id=job_id,
+        action="segment_edited",
+        details={
+            "sequence_number": sequence_number,
+            "old_text": old_text,
+            "new_text": new_text,
+        },
+    ))
+    await db.commit()
+    await db.refresh(seg)
+    return _seg_to_response(seg)
+
+
 async def _get_doc_or_404(job_id, db):
     doc, segments = await get_transcript(db, job_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Transcript not available.")
     return doc, segments
+
+
+def _seg_to_response(s) -> TranscriptSegmentResponse:
+    return TranscriptSegmentResponse(
+        sequence_number=s.sequence_number,
+        start=float(s.start_seconds),
+        end=float(s.end_seconds),
+        text=s.text,
+        confidence=float(s.confidence) if s.confidence is not None else None,
+        speaker_label=s.speaker_label,
+        low_confidence=(
+            float(s.confidence) < LOW_CONFIDENCE_THRESHOLD
+            if s.confidence is not None
+            else False
+        ),
+        updated_at=s.updated_at,
+    )
 
 
 def _job_to_response(job) -> TranscriptionJobResponse:
