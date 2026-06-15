@@ -26,7 +26,13 @@ def make_doc(full_text, word_count=10, segment_count=2):
 
 
 def make_job(title="Test Video", source_url="https://www.youtube.com/watch?v=test"):
-    from app.models.transcription_job import JobStatus, ProcessingStrategy
+    try:
+        from app.models.transcription_job import JobStatus, ProcessingStrategy
+        status = JobStatus.completed
+        strategy = ProcessingStrategy.caption
+    except Exception:
+        status = "completed"
+        strategy = "caption"
     job = MagicMock()
     job.id = uuid.uuid4()
     job.title = title
@@ -34,8 +40,8 @@ def make_job(title="Test Video", source_url="https://www.youtube.com/watch?v=tes
     job.source_type = "youtube"
     job.duration_seconds = 120
     job.language = "en"
-    job.status = JobStatus.completed
-    job.processing_strategy = ProcessingStrategy.caption
+    job.status = status
+    job.processing_strategy = strategy
     job.completed_at = datetime.now(timezone.utc)
     return job
 

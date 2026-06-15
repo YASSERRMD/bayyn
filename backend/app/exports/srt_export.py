@@ -1,7 +1,11 @@
-from app.models.transcript_segment import TranscriptSegment
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.models.transcript_segment import TranscriptSegment
 
 
-def generate_srt(segments: list[TranscriptSegment]) -> str:
+def generate_srt(segments: list[Any]) -> str:
     lines = []
     for i, seg in enumerate(segments, start=1):
         start_ts = _seconds_to_srt_time(float(seg.start_seconds))

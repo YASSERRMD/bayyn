@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Optional
 import uuid
 from datetime import datetime
 
@@ -21,8 +23,8 @@ class TranscriptSegment(Base):
     start_seconds: Mapped[float] = mapped_column(Numeric(10, 3), nullable=False)
     end_seconds: Mapped[float] = mapped_column(Numeric(10, 3), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
-    speaker_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(5, 4), nullable=True)
+    speaker_label: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

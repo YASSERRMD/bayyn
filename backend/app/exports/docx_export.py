@@ -1,18 +1,21 @@
+from __future__ import annotations
 import io
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from docx import Document
 from docx.shared import Pt, RGBColor
 
-from app.models.transcript_document import TranscriptDocument
-from app.models.transcript_segment import TranscriptSegment
-from app.models.transcription_job import TranscriptionJob
+if TYPE_CHECKING:
+    from app.models.transcript_document import TranscriptDocument
+    from app.models.transcript_segment import TranscriptSegment
+    from app.models.transcription_job import TranscriptionJob
 
 
 def generate_docx(
-    job: TranscriptionJob,
-    doc: TranscriptDocument,
-    segments: list[TranscriptSegment],
+    job: Any,
+    doc: Any,
+    segments: list[Any],
 ) -> bytes:
     document = Document()
 
@@ -31,7 +34,9 @@ def generate_docx(
         meta.add_run("\nLanguage: ").bold = True
         meta.add_run(job.language)
     meta.add_run("\nProcessing: ").bold = True
-    meta.add_run(job.processing_strategy.value.title())
+    strategy = job.processing_strategy
+    strategy_str = strategy.value if hasattr(strategy, "value") else str(strategy)
+    meta.add_run(strategy_str.title())
     if job.completed_at:
         meta.add_run("\nTranscribed: ").bold = True
         meta.add_run(job.completed_at.strftime("%Y-%m-%d %H:%M UTC"))
