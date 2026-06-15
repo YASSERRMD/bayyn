@@ -146,11 +146,27 @@ export default function JobPage() {
             <p className="text-bayyn-navy font-semibold mb-1">
               {job.status === "pending" ? "Queued for processing…" : "Extracting transcript…"}
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 mb-4">
               {job.status === "pending"
                 ? "Your job is in the queue."
+                : job.current_step
+                ? `Step: ${job.current_step.replace(/_/g, " ")}`
                 : "Fetching captions or transcribing audio. This may take a moment."}
             </p>
+            {job.progress_pct > 0 && (
+              <div className="max-w-sm mx-auto">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Progress</span>
+                  <span>{job.progress_pct}%</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-2 rounded-full bg-bayyn-gold transition-all duration-700"
+                    style={{ width: `${job.progress_pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
