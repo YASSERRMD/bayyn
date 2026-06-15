@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
+import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -9,6 +10,7 @@ from slowapi.util import get_remote_address
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -38,6 +40,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all: log internally, never expose stack traces or paths to clients."""
+    logger.error(
+        "Unhandled exception method=%s path=%s exc_type=%s exc=%r",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        str(exc),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again later."},
+    )
+
 
 from app.api.v1 import transcriptions  # noqa: E402
 app.include_router(transcriptions.router, prefix="/api")
