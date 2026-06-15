@@ -24,6 +24,25 @@ def _get_session() -> Session:
     return SyncSession()
 
 
+def _soft_timeout_exc():
+    try:
+        from celery.exceptions import SoftTimeLimitExceeded
+        return SoftTimeLimitExceeded
+    except ImportError:
+        return type("_NeverRaised", (BaseException,), {})
+
+
+def _fail_job(job_uuid: uuid.UUID, message: str, action: str = "job_failed") -> None:
+    with _get_session() as db:
+        job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
+        if job:
+            job.status = JobStatus.failed
+            job.error_message = message
+            job.completed_at = datetime.now(timezone.utc)
+            db.add(AuditLog(job_id=job_uuid, action=action, details={"error": message}))
+            db.commit()
+
+
 @celery_app.task(bind=True, name="app.workers.transcription_tasks.process_transcription_job")
 def process_transcription_job(self: Task, job_id: str) -> dict:
     job_uuid = uuid.UUID(job_id)
@@ -46,24 +65,18 @@ def process_transcription_job(self: Task, job_id: str) -> dict:
         TempManager.cleanup_job_dir(job_uuid, reason="completed")
         return {"status": "completed", "job_id": job_id}
 
+    except _soft_timeout_exc() as exc:
+        TempManager.cleanup_job_dir(job_uuid, reason="timeout")
+        timeout_msg = "Processing timed out. The video may be too long to transcribe."
+        logger.warning("Soft timeout reached job=%s", job_id)
+        _fail_job(job_uuid, timeout_msg, action="job_timeout")
+        return {"status": "timeout", "job_id": job_id}
+
     except Exception as exc:
         TempManager.cleanup_job_dir(job_uuid, reason="failure")
         safe_message = _sanitize_error(str(exc))
         logger.error("Transcription failed job=%s error=%s", job_id, safe_message)
-
-        with _get_session() as db:
-            job = db.query(TranscriptionJob).filter(TranscriptionJob.id == job_uuid).first()
-            if job:
-                job.status = JobStatus.failed
-                job.error_message = safe_message
-                job.completed_at = datetime.now(timezone.utc)
-                db.add(AuditLog(
-                    job_id=job_uuid,
-                    action="job_failed",
-                    details={"error": safe_message},
-                ))
-                db.commit()
-
+        _fail_job(job_uuid, safe_message, action="job_failed")
         return {"status": "failed", "job_id": job_id}
 
 
