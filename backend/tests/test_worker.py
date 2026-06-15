@@ -4,6 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+requires_db = pytest.mark.skipif(
+    not __import__("importlib").util.find_spec("asyncpg"),
+    reason="asyncpg not installed; tests run in Docker with Python 3.12"
+)
+
 
 def make_fake_job(job_id):
     from app.models.transcription_job import JobStatus, ProcessingStrategy
@@ -15,6 +20,7 @@ def make_fake_job(job_id):
     return job
 
 
+@requires_db
 def test_sanitize_error_redacts_url():
     from app.workers.transcription_tasks import _sanitize_error
     msg = "Failed to download https://secret.cloudfront.net/audio.m4a?token=abc123"
@@ -23,6 +29,7 @@ def test_sanitize_error_redacts_url():
     assert "[URL_REDACTED]" in result
 
 
+@requires_db
 def test_sanitize_error_redacts_tmp_path():
     from app.workers.transcription_tasks import _sanitize_error
     job_id = uuid.uuid4()
@@ -32,6 +39,7 @@ def test_sanitize_error_redacts_tmp_path():
     assert "[PATH_REDACTED]" in result
 
 
+@requires_db
 def test_sanitize_error_truncates_long_message():
     from app.workers.transcription_tasks import _sanitize_error
     long_msg = "x" * 1000
@@ -74,6 +82,7 @@ def test_no_temp_files_remain_after_job(tmp_path):
         assert not (tmp_path / str(job_id)).exists()
 
 
+@requires_db
 def test_media_stored_never_true():
     """Worker must never set media_stored=True."""
     from app.workers.transcription_tasks import _store_transcript

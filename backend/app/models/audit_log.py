@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Optional
 import uuid
 from datetime import datetime
 
@@ -14,15 +16,15 @@ class AuditLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    job_id: Mapped[uuid.UUID | None] = mapped_column(
+    job_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("transcription_jobs.id"), nullable=True
     )
     action: Mapped[str] = mapped_column(String(128), nullable=False)
-    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )
 
-    job: Mapped["TranscriptionJob | None"] = relationship(  # noqa: F821
+    job: Mapped[Optional["TranscriptionJob"]] = relationship(  # noqa: F821
         "TranscriptionJob", back_populates="audit_logs"
     )

@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Optional
 import uuid
 from datetime import datetime
 
@@ -14,8 +16,8 @@ class TempCleanupLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    temp_path_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    job_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    temp_path_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     cleanup_reason: Mapped[str] = mapped_column(String(256), nullable=False)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
